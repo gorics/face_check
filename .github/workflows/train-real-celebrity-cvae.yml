@@ -9,6 +9,10 @@ on:
       - '.github/workflows/train-real-celebrity-cvae.yml'
   workflow_dispatch:
 
+concurrency:
+  group: celebrity-face-training
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
