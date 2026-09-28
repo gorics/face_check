@@ -1,0 +1,59 @@
+name: Train Real Celebrity CVAE
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'train_real_faces.py'
+      - '.github/workflows/train-real-celebrity-cvae.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install pillow requests numpy
+
+      - name: Train on license-filtered Wikimedia Commons celebrity photos
+        run: |
+          python train_real_faces.py
+
+      - name: Show summary
+        if: always()
+        run: |
+          if [ -f artifacts/summary.json ]; then cat artifacts/summary.json; fi
+          find artifacts -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
+
+      - name: Upload trained model and generated samples
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: celebrity-cvae-real-data
+          path: |
+            artifacts/celebrity_cvae.pt
+            artifacts/generated_samples.png
+            artifacts/summary.json
+            artifacts/training_log.json
+            artifacts/sources.json
+          if-no-files-found: error
+          retention-days: 7
