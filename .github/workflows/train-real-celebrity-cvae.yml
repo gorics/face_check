@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'train_real_faces.py'
+      - 'curated_train.py'
       - '.github/workflows/train-real-celebrity-cvae.yml'
   workflow_dispatch:
 
@@ -33,9 +34,9 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu torch
           pip install pillow requests numpy 'opencv-python-headless<5'
 
-      - name: Train on license-filtered Wikimedia Commons celebrity photos
+      - name: Train on curated license-filtered Wikimedia Commons celebrity photos
         run: |
-          python train_real_faces.py
+          python curated_train.py
 
       - name: Show summary
         if: always()
@@ -47,7 +48,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: celebrity-cvae-real-data
+          name: celebrity-cvae-real-data-curated
           path: |
             artifacts/celebrity_cvae.pt
             artifacts/generated_samples.png
