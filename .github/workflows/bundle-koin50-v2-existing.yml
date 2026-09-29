@@ -1,0 +1,40 @@
+name: Bundle Existing KoIn50 v2 Shards
+
+on:
+  push:
+    paths:
+      - 'build_koin50_v2_bundle_fix.py'
+      - '.github/workflows/bundle-koin50-v2-existing.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  bundle-existing:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pillow
+      - name: Download 25 successful v2 shard artifacts from source run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: koin50-v2-shard-*
+          path: downloaded_v2
+          merge-multiple: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: gorics/face_check
+          run-id: 36530216819
+      - name: Build fixed v2 routed bundle
+        run: python build_koin50_v2_bundle_fix.py
+      - name: Upload complete v2 system
+        uses: actions/upload-artifact@v4
+        with:
+          name: koin50-korean-celeb-v2-128px-50id-system-fixed
+          path: koin50_v2_bundle/
+          if-no-files-found: error
+          retention-days: 7
