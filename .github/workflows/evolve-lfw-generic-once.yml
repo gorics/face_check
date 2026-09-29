@@ -1,0 +1,47 @@
+name: One-shot Recursive Generic LFW Evolution
+
+on:
+  push:
+    paths:
+      - 'evolve_lfw_generic_once.py'
+      - '.github/workflows/evolve-lfw-generic-once.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  evolve-once:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow scikit-learn
+      - name: Download v5 parent checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: lfw-generic-face-vae-v5
+          path: parent_artifact
+          github-token: ${{ github.token }}
+          repository: gorics/face_check
+          run-id: 36543034259
+      - name: Run one-shot recursive convergence loop
+        run: python evolve_lfw_generic_once.py
+      - name: Show final summary
+        if: always()
+        run: cat lfw_generic_once_out/summary_recursive_once.json 2>/dev/null || true
+      - name: Upload final evolved checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: lfw-generic-face-recursive-once
+          path: lfw_generic_once_out/
+          if-no-files-found: error
+          retention-days: 7
