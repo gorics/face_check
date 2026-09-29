@@ -1,0 +1,67 @@
+name: Train KoIn50 v2 128px 50-ID System
+
+on:
+  push:
+    paths:
+      - 'train_koin50_v2_128.py'
+      - 'build_koin50_v2_bundle.py'
+      - '.github/workflows/train-koin50-v2-128.yml'
+  workflow_dispatch:
+
+jobs:
+  train-shards:
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow requests 'opencv-python-headless<5' 'gdown>=6.4.0'
+      - name: Train two Korean celebrity identities on isolated runner
+        run: python train_koin50_v2_128.py --shard ${{ matrix.shard }}
+      - name: Show shard summary
+        if: always()
+        run: |
+          find artifacts_koin50_v2_* -name 'summary_*.json' -maxdepth 2 -print -exec cat {} \; 2>/dev/null || true
+      - name: Upload shard model only
+        uses: actions/upload-artifact@v4
+        with:
+          name: koin50-v2-shard-${{ matrix.shard }}
+          path: artifacts_koin50_v2_*/
+          if-no-files-found: error
+          retention-days: 7
+
+  bundle:
+    needs: train-shards
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install pillow
+      - name: Download all v2 shards
+        uses: actions/download-artifact@v4
+        with:
+          pattern: koin50-v2-shard-*
+          path: downloaded_v2
+          merge-multiple: false
+      - name: Build routed v2 bundle
+        run: python build_koin50_v2_bundle.py
+      - name: Upload complete v2 Korean-celebrity system
+        uses: actions/upload-artifact@v4
+        with:
+          name: koin50-korean-celeb-v2-128px-50id-system
+          path: koin50_v2_bundle/
+          if-no-files-found: error
+          retention-days: 7
