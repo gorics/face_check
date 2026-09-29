@@ -1,0 +1,35 @@
+name: Train Generic Unlabeled LFW Face VAE v5 Fast
+
+on:
+  push:
+    paths:
+      - '.github/workflows/train-lfw-generic-v5-fast.yml'
+  workflow_dispatch:
+
+jobs:
+  train-fast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow scikit-learn
+      - name: Configure compact validation run
+        run: |
+          sed -i 's/MAX_IMAGES=6000/MAX_IMAGES=2500/' train_lfw_generic_v5.py
+          sed -i 's/EPOCHS=6/EPOCHS=3/' train_lfw_generic_v5.py
+      - name: Train unlabeled generic face generator
+        run: python train_lfw_generic_v5.py
+      - name: Upload model and generated samples
+        uses: actions/upload-artifact@v4
+        with:
+          name: lfw-generic-face-vae-v5-fast
+          path: lfw_generic_v5_out/
+          if-no-files-found: error
+          retention-days: 7
