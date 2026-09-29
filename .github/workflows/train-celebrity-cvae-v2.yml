@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'train_v2.py'
+      - 'train_v2_retry.py'
       - '.github/workflows/train-celebrity-cvae-v2.yml'
   workflow_dispatch:
 
@@ -39,7 +40,7 @@ jobs:
 
       - name: Train expanded 7-identity model
         run: |
-          python train_v2.py
+          python train_v2_retry.py
 
       - name: Show summary
         if: always()
