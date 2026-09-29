@@ -1,0 +1,47 @@
+name: Evolve Generic Unlabeled LFW Face Model
+
+on:
+  push:
+    paths:
+      - 'evolve_lfw_generic_v5.py'
+      - '.github/workflows/evolve-lfw-generic-recursive.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  evolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow scikit-learn
+      - name: Download v5 parent checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: lfw-generic-face-vae-v5
+          path: parent_artifact
+          github-token: ${{ github.token }}
+          repository: gorics/face_check
+          run-id: 36543034259
+      - name: Run three recursive evolution generations
+        run: python evolve_lfw_generic_v5.py
+      - name: Show recursive summary
+        if: always()
+        run: cat lfw_generic_recursive_out/summary_recursive.json 2>/dev/null || true
+      - name: Upload evolved checkpoint and samples
+        uses: actions/upload-artifact@v4
+        with:
+          name: lfw-generic-face-recursive-g3
+          path: lfw_generic_recursive_out/
+          if-no-files-found: error
+          retention-days: 7
