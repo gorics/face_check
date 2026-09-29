@@ -1,0 +1,62 @@
+name: Train KoIn50 Korean Celebrities
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'train_koin50_v1.py'
+      - '.github/workflows/train-koin50-korean-celebs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: koin50-korean-celeb-training
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  train-koin50:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow requests 'opencv-python-headless<5' 'gdown>=6.4.0'
+
+      - name: Download balanced KoIn50 subset and train
+        run: python train_koin50_v1.py
+
+      - name: Show summary
+        if: always()
+        run: |
+          if [ -f artifacts_koin50/summary.json ]; then cat artifacts_koin50/summary.json; fi
+          if [ -f artifacts_koin50/data_summary.json ]; then cat artifacts_koin50/data_summary.json; fi
+          find artifacts_koin50 -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
+
+      - name: Upload trained model only, no source photos
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: koin50-korean-celeb-cvae-50id
+          path: |
+            artifacts_koin50/koin50_korean_celeb_cvae.pt
+            artifacts_koin50/generated_koin50_samples.png
+            artifacts_koin50/summary.json
+            artifacts_koin50/data_summary.json
+            artifacts_koin50/training_log.json
+          if-no-files-found: error
+          retention-days: 7
