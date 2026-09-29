@@ -1,8 +1,9 @@
 import json
-import subprocess
-import sys
-from collections import Counter, defaultdict
-from pathlib import PurePosixPath
+import re
+from collections import deque
+
+import requests
+from gdown.download_folder import _GoogleDriveFile, _parse_embedded_folder_view
 
 FOLDERS = {
     "KoIn10": "https://drive.google.com/drive/folders/178c7uJM99eY87OZJQAy_Vn6u5xgAezwc?usp=sharing",
@@ -10,121 +11,133 @@ FOLDERS = {
     "KoIn100": "https://drive.google.com/drive/folders/10t3fAwlNV764pzHz1crinezgDfEsU1i5?usp=sharing",
 }
 
-IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+
+def folder_id(url):
+    m = re.search(r"/folders/([^/?#]+)", url)
+    if not m:
+        raise ValueError(url)
+    return m.group(1)
 
 
-def run_json_probe(url: str):
-    # gdown 6.x: --folder tells it to enumerate a Drive folder; --json returns
-    # the planned file URL/path list without downloading the images.
-    cmds = [
-        [sys.executable, "-m", "gdown", "--folder", "--json", url],
-        ["gdown", "--folder", "--json", url],
-    ]
+def is_class_name(name):
+    # KoIn README documents identity directories as 0000 ... 0099.
+    return bool(re.fullmatch(r"\d{1,4}", name.strip()))
+
+
+def list_immediate(sess, fid):
+    result = _parse_embedded_folder_view(
+        sess=sess,
+        folder_id=fid,
+        verify=True,
+        timeout=30,
+    )
+    if result is None:
+        raise RuntimeError(f"could not parse folder {fid}")
+    name, children = result
+    return name, children
+
+
+def scan_dataset(label, url, max_depth=8):
+    sess = requests.Session()
+    sess.headers.update({
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
+    })
+    root_id = folder_id(url)
+    q = deque([(root_id, "", 0)])
+    visited = set()
+    folder_nodes = []
+    class_folders = []
     errors = []
-    for cmd in cmds:
+
+    while q:
+        fid, parent_path, depth = q.popleft()
+        if fid in visited or depth > max_depth:
+            continue
+        visited.add(fid)
         try:
-            p = subprocess.run(cmd, text=True, capture_output=True, timeout=600)
-            if p.returncode != 0:
-                errors.append({"cmd": cmd, "returncode": p.returncode, "stdout": p.stdout[-3000:], "stderr": p.stderr[-5000:]})
-                continue
-            text = p.stdout.strip()
-            starts = [i for i in (text.find("["), text.find("{")) if i >= 0]
-            if starts:
-                text = text[min(starts):]
-            data = json.loads(text)
-            if isinstance(data, dict):
-                for key in ("files", "items", "data"):
-                    if isinstance(data.get(key), list):
-                        data = data[key]
-                        break
-            if not isinstance(data, list):
-                raise TypeError(f"unexpected JSON type: {type(data).__name__}")
-            return data, {"command": cmd, "stderr_tail": p.stderr[-2000:]}
+            folder_name, children = list_immediate(sess, fid)
         except Exception as e:
-            errors.append({"cmd": cmd, "error": repr(e)})
-    raise RuntimeError(json.dumps(errors, ensure_ascii=False))
+            errors.append({"folder_id": fid, "path": parent_path, "error": repr(e)})
+            continue
 
+        here = f"{parent_path}/{folder_name}".strip("/")
+        folder_children = []
+        file_children = 0
+        for child in children:
+            cid, cname, ctype = child[:3]
+            if ctype == _GoogleDriveFile.TYPE_FOLDER:
+                folder_children.append({"id": cid, "name": cname})
+            else:
+                file_children += 1
 
-def normalize_entry(entry):
-    if isinstance(entry, str):
-        return {"path": entry, "url": None}
-    if not isinstance(entry, dict):
-        return {"path": str(entry), "url": None}
+        folder_nodes.append({
+            "id": fid,
+            "path": here,
+            "depth": depth,
+            "subfolders": len(folder_children),
+            "immediate_files": file_children,
+        })
+        print(f"[{label}] depth={depth} {here!r}: folders={len(folder_children)} files={file_children}", flush=True)
+
+        for child in folder_children:
+            cpath = f"{here}/{child['name']}".strip("/")
+            if is_class_name(child["name"]):
+                class_folders.append({
+                    "class": child["name"].zfill(4),
+                    "id": child["id"],
+                    "path": cpath,
+                })
+                print(f"[{label}] CLASS {child['name'].zfill(4)} -> {child['id']}", flush=True)
+            else:
+                q.append((child["id"], here, depth + 1))
+
+    # Dedupe by class/path; a dataset may expose normal/test branches separately.
+    unique = []
+    seen = set()
+    for row in class_folders:
+        key = (row["class"], row["id"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(row)
+
     return {
-        "path": entry.get("path") or entry.get("name") or entry.get("filename") or "",
-        "url": entry.get("url") or entry.get("link") or entry.get("id"),
-        "raw": entry,
-    }
-
-
-def summarize(entries):
-    norm = [normalize_entry(e) for e in entries]
-    paths = [n["path"] for n in norm if n["path"]]
-    image_paths = [p for p in paths if PurePosixPath(p).suffix.lower() in IMAGE_EXT]
-    ext_counts = Counter(PurePosixPath(p).suffix.lower() or "<none>" for p in paths)
-    depth_counts = Counter(len(PurePosixPath(p).parts) for p in paths)
-
-    class_counts = Counter()
-    for p in image_paths:
-        parts = PurePosixPath(p).parts[:-1]
-        numeric = [x for x in parts if x.isdigit() and len(x) <= 4]
-        if numeric:
-            class_counts[numeric[-1].zfill(4)] += 1
-
-    dirs_by_depth = defaultdict(Counter)
-    for p in paths:
-        parts = PurePosixPath(p).parts
-        for i, part in enumerate(parts[:-1]):
-            dirs_by_depth[str(i)][part] += 1
-
-    return {
-        "entry_count": len(entries),
-        "path_count": len(paths),
-        "image_count": len(image_paths),
-        "extension_counts": dict(ext_counts.most_common()),
-        "path_depth_counts": dict(sorted(depth_counts.items())),
-        "detected_numeric_classes": len(class_counts),
-        "numeric_class_image_counts": dict(sorted(class_counts.items())),
-        "top_directories_by_depth": {
-            d: c.most_common(30) for d, c in sorted(dirs_by_depth.items(), key=lambda kv: int(kv[0]))
-        },
-        "sample_paths": paths[:120],
-        "sample_entries": norm[:30],
+        "folder_url": url,
+        "root_id": root_id,
+        "visited_folders": len(visited),
+        "folder_nodes": folder_nodes,
+        "class_folder_count": len(unique),
+        "class_folders": sorted(unique, key=lambda x: (x["path"], x["class"])),
+        "errors": errors,
     }
 
 
 def main():
     report = {
-        "source": "KoIn official Google Drive folders linked from dukong1/KoIn_Benchmark_Dataset",
+        "source": "Official KoIn Google Drive links from dukong1/KoIn_Benchmark_Dataset",
+        "mode": "folder-only embeddedfolderview probe; no celebrity images downloaded",
         "downloaded_images": 0,
-        "mode": "metadata-only gdown JSON probe",
         "datasets": {},
     }
-    for name, url in FOLDERS.items():
-        print(f"=== probing {name} ===", flush=True)
+    for label, url in FOLDERS.items():
+        print(f"=== {label} folder-only probe ===", flush=True)
         try:
-            entries, meta = run_json_probe(url)
-            summary = summarize(entries)
-            summary["folder_url"] = url
-            summary["probe_meta"] = meta
-            report["datasets"][name] = summary
-            print(json.dumps({
-                "name": name,
-                "entries": summary["entry_count"],
-                "images": summary["image_count"],
-                "classes": summary["detected_numeric_classes"],
-                "sample_paths": summary["sample_paths"][:12],
-            }, ensure_ascii=False, indent=2), flush=True)
+            report["datasets"][label] = scan_dataset(label, url)
         except Exception as e:
-            report["datasets"][name] = {"folder_url": url, "error": repr(e)}
-            print(f"probe failed for {name}: {e!r}", flush=True)
+            report["datasets"][label] = {"folder_url": url, "error": repr(e)}
 
     with open("koin_probe.json", "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
-    ok = [v for v in report["datasets"].values() if "error" not in v]
-    if not ok:
-        raise SystemExit("All KoIn Drive probes failed")
+    print("=== SUMMARY ===", flush=True)
+    for label, d in report["datasets"].items():
+        print(label, {
+            "visited_folders": d.get("visited_folders"),
+            "class_folder_count": d.get("class_folder_count"),
+            "error": d.get("error"),
+        }, flush=True)
+
+    if not any(d.get("class_folder_count", 0) for d in report["datasets"].values()):
+        raise SystemExit("No KoIn identity folders found")
 
 
 if __name__ == "__main__":
