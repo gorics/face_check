@@ -1,0 +1,35 @@
+name: Run Practical DreamShaper LCM Singlefile
+
+on:
+  push:
+    paths:
+      - 'run_dreamshaper_lcm_singlefile.py'
+      - '.github/workflows/run-dreamshaper-lcm-singlefile.yml'
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install runtime
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install 'diffusers>=0.36' 'transformers>=4.48' accelerate safetensors huggingface_hub pillow
+      - name: Generate one practical 512px sample
+        run: python run_dreamshaper_lcm_singlefile.py
+      - name: Show summary
+        if: always()
+        run: cat dreamshaper_singlefile_out/summary.json 2>/dev/null || true
+      - name: Upload verified output
+        uses: actions/upload-artifact@v4
+        with:
+          name: dreamshaper-lcm-singlefile-verified
+          path: dreamshaper_singlefile_out/
+          if-no-files-found: error
+          retention-days: 7
