@@ -1,0 +1,63 @@
+name: Train Celebrity CVAE v2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'train_v2.py'
+      - '.github/workflows/train-celebrity-cvae-v2.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: celebrity-face-training-v2
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  train-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install pillow requests numpy 'opencv-python-headless<5'
+
+      - name: Train expanded 7-identity model
+        run: |
+          python train_v2.py
+
+      - name: Show summary
+        if: always()
+        run: |
+          if [ -f artifacts_v2/summary_v2.json ]; then cat artifacts_v2/summary_v2.json; fi
+          find artifacts_v2 -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
+
+      - name: Upload v2 model
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: celebrity-cvae-v2-7id-64px
+          path: |
+            artifacts_v2/celebrity_cvae_v2.pt
+            artifacts_v2/generated_samples_v2.png
+            artifacts_v2/summary_v2.json
+            artifacts_v2/training_log_v2.json
+            artifacts_v2/sources_v2.json
+            artifacts_v2/counts_v2.json
+          if-no-files-found: error
+          retention-days: 7
