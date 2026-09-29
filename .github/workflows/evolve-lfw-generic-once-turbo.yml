@@ -1,0 +1,47 @@
+name: Turbo One-shot Recursive Generic LFW Evolution
+
+on:
+  push:
+    paths:
+      - 'evolve_lfw_generic_once_turbo.py'
+      - '.github/workflows/evolve-lfw-generic-once-turbo.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  evolve-turbo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow scikit-learn
+      - name: Download v5 parent checkpoint
+        uses: actions/download-artifact@v4
+        with:
+          name: lfw-generic-face-vae-v5
+          path: parent_artifact
+          github-token: ${{ github.token }}
+          repository: gorics/face_check
+          run-id: 36543034259
+      - name: Run turbo one-shot recursive convergence
+        run: python evolve_lfw_generic_once_turbo.py
+      - name: Show final summary
+        if: always()
+        run: cat lfw_generic_once_turbo_out/summary_recursive_turbo.json 2>/dev/null || true
+      - name: Upload final turbo checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: lfw-generic-face-recursive-once-turbo
+          path: lfw_generic_once_turbo_out/
+          if-no-files-found: error
+          retention-days: 7
