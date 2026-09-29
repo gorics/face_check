@@ -1,0 +1,61 @@
+name: Train LFW Celebrity CVAE v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'train_lfw_v3.py'
+      - '.github/workflows/train-lfw-cvae-v3.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: celebrity-face-training-v3
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  train-v3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow 'opencv-python-headless<5' scikit-learn
+
+      - name: Download LFW and train v3
+        run: |
+          python train_lfw_v3.py
+
+      - name: Show v3 summary
+        if: always()
+        run: |
+          if [ -f artifacts_v3/summary_v3.json ]; then cat artifacts_v3/summary_v3.json; fi
+          find artifacts_v3 -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
+
+      - name: Upload v3 model
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lfw-cvae-v3-24id-64px
+          path: |
+            artifacts_v3/lfw_cvae_v3.pt
+            artifacts_v3/generated_samples_v3.png
+            artifacts_v3/summary_v3.json
+            artifacts_v3/training_log_v3.json
+          if-no-files-found: error
+          retention-days: 7
