@@ -14,25 +14,25 @@ IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 
 def run_json_probe(url: str):
+    # gdown 6.x: --folder tells it to enumerate a Drive folder; --json returns
+    # the planned file URL/path list without downloading the images.
     cmds = [
-        [sys.executable, "-m", "gdown", "--json", "--remaining-ok", url],
-        ["gdown", "--json", "--remaining-ok", url],
+        [sys.executable, "-m", "gdown", "--folder", "--json", url],
+        ["gdown", "--folder", "--json", url],
     ]
     errors = []
     for cmd in cmds:
         try:
-            p = subprocess.run(cmd, text=True, capture_output=True, timeout=480)
+            p = subprocess.run(cmd, text=True, capture_output=True, timeout=600)
             if p.returncode != 0:
-                errors.append({"cmd": cmd, "returncode": p.returncode, "stderr": p.stderr[-4000:]})
+                errors.append({"cmd": cmd, "returncode": p.returncode, "stdout": p.stdout[-3000:], "stderr": p.stderr[-5000:]})
                 continue
             text = p.stdout.strip()
-            # gdown can print notices before the JSON; find the first JSON token.
             starts = [i for i in (text.find("["), text.find("{")) if i >= 0]
             if starts:
                 text = text[min(starts):]
             data = json.loads(text)
             if isinstance(data, dict):
-                # Some versions wrap the list.
                 for key in ("files", "items", "data"):
                     if isinstance(data.get(key), list):
                         data = data[key]
@@ -64,7 +64,6 @@ def summarize(entries):
     ext_counts = Counter(PurePosixPath(p).suffix.lower() or "<none>" for p in paths)
     depth_counts = Counter(len(PurePosixPath(p).parts) for p in paths)
 
-    # Candidate identity/class directories: numeric 4-digit path components, as documented by KoIn README.
     class_counts = Counter()
     for p in image_paths:
         parts = PurePosixPath(p).parts[:-1]
@@ -72,7 +71,6 @@ def summarize(entries):
         if numeric:
             class_counts[numeric[-1].zfill(4)] += 1
 
-    # Also show dominant directories at each depth to understand the actual Drive layout.
     dirs_by_depth = defaultdict(Counter)
     for p in paths:
         parts = PurePosixPath(p).parts
