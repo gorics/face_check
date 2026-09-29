@@ -1,0 +1,58 @@
+name: Probe KoIn Google Drive
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'probe_koin_drive.py'
+      - '.github/workflows/probe-koin-drive.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  probe-koin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install gdown
+        run: |
+          python -m pip install --upgrade pip
+          pip install 'gdown>=5.2.0'
+          gdown --version || true
+
+      - name: Probe official KoIn Drive folders without downloading images
+        run: python probe_koin_drive.py
+
+      - name: Show probe summary
+        if: always()
+        run: |
+          if [ -f koin_probe.json ]; then
+            python - <<'PY'
+          import json
+          d=json.load(open('koin_probe.json',encoding='utf-8'))
+          for k,v in d.get('datasets',{}).items():
+              print(k, {x:v.get(x) for x in ('entry_count','image_count','detected_numeric_classes','error')})
+          PY
+          fi
+
+      - name: Upload probe report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: koin-drive-probe
+          path: koin_probe.json
+          if-no-files-found: error
+          retention-days: 7
