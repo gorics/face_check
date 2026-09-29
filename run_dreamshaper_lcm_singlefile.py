@@ -2,15 +2,19 @@ import json, time
 from pathlib import Path
 import torch
 from diffusers import StableDiffusionPipeline, LCMScheduler
+from huggingface_hub import hf_hub_download
 
 OUT=Path('dreamshaper_singlefile_out'); OUT.mkdir(exist_ok=True)
-MODEL_URL='https://huggingface.co/Lykon/dreamshaper-8-lcm/resolve/main/DreamShaper8_LCM.safetensors'
+REPO='Lykon/dreamshaper-8-lcm'
+FILENAME='DreamShaper8_LCM.safetensors'
 PROMPT='professional editorial portrait photo of an adult Korean fashion model, natural skin texture, realistic eyes, 85mm lens, shallow depth of field, soft studio lighting, detailed hair, photorealistic'
 NEG='deformed, disfigured, bad anatomy, extra limbs, duplicate face, blurry, low resolution, waxy skin, cartoon, illustration'
 
 start=time.time()
+ckpt=hf_hub_download(repo_id=REPO, filename=FILENAME)
 pipe=StableDiffusionPipeline.from_single_file(
-    MODEL_URL,
+    ckpt,
+    config=REPO,
     torch_dtype=torch.bfloat16,
     safety_checker=None,
     feature_extractor=None,
@@ -26,6 +30,6 @@ t=time.time()
 image=pipe(prompt=PROMPT, negative_prompt=NEG, num_inference_steps=8, guidance_scale=2.0, width=512, height=512, generator=g).images[0]
 infer_seconds=time.time()-t
 image.save(OUT/'sample.png')
-summary={'model_url':MODEL_URL,'resolution':'512x512','steps':8,'guidance_scale':2.0,'dtype':'bfloat16','device':'cpu','load_seconds':load_seconds,'inference_seconds':infer_seconds,'seed':20260929}
+summary={'repo':REPO,'checkpoint':FILENAME,'resolution':'512x512','steps':8,'guidance_scale':2.0,'dtype':'bfloat16','device':'cpu','load_seconds':load_seconds,'inference_seconds':infer_seconds,'seed':20260929}
 (OUT/'summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
 print(json.dumps(summary,indent=2),flush=True)
