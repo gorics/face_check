@@ -1,0 +1,62 @@
+name: Train LFW Celebrity CVAE v4 Fixed
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'train_lfw_v4.py'
+      - '.github/workflows/train-lfw-cvae-v4.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: celebrity-face-training-v4
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  train-v4:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          pip install numpy pillow 'opencv-python-headless<5' scikit-learn
+
+      - name: Download LFW and train corrected v4
+        run: |
+          python train_lfw_v4.py
+
+      - name: Show v4 summary
+        if: always()
+        run: |
+          if [ -f artifacts_v4/summary_v4.json ]; then cat artifacts_v4/summary_v4.json; fi
+          find artifacts_v4 -maxdepth 1 -type f -printf '%f %s bytes\n' 2>/dev/null || true
+
+      - name: Upload v4 model
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lfw-cvae-v4-fixed-24id-64px
+          path: |
+            artifacts_v4/lfw_cvae_v4.pt
+            artifacts_v4/generated_samples_v4.png
+            artifacts_v4/reconstruction_grid_v4.png
+            artifacts_v4/summary_v4.json
+            artifacts_v4/training_log_v4.json
+          if-no-files-found: error
+          retention-days: 7
